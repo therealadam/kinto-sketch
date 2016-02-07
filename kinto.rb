@@ -16,7 +16,12 @@ class Kinto
 
   def initialize(url, token)
     auth = Base64.urlsafe_encode64("token:#{token}")
-    @connection = Excon.new(url, headers: {"Authorization": "Basic #{auth}"})
+    headers = {
+      "Authorization": "Basic #{auth}",
+      "Content-Type": "application/json",
+      "Accept": "application/json",
+    }
+    @connection = Excon.new(url, headers: headers)
   end
 
   def healthcheck
@@ -53,7 +58,21 @@ class Kinto
   end
 
   def create_bucket(name)
-    request(method: :post, path: '/v1/buckets')
+    body = {"data" => {"id" => name}}
+    json = Oj.dump(body)
+
+    request(method: :post,
+            path: '/v1/buckets',
+            body: json,
+            debug: true,
+            expects: [200, 201],)
+  end
+
+  def get_bucket(name)
+    request(method: :get,
+            path: "/v1/buckets/#{name}",
+            debug: true,
+            expects: [200],)
   end
 
   # replace
@@ -62,7 +81,14 @@ class Kinto
   ## Collections
 
   def create_collection(bucket: "default", name:)
-    request(method: :post, path: "/v1/buckets/#{bucket}/collections")
+    body = {"data" => {"id" => name}}
+    json = Oj.dump(body)
+
+    request(method: :post,
+            path: "/v1/buckets/#{bucket}/collections",
+            body: json,
+            debug: true,
+            expects: [200, 201],)
   end
   
   ## Records
@@ -73,10 +99,27 @@ class Kinto
 
     request(method: :post,
             path: "/v1/buckets/#{bucket}/collections/#{collection}/records",
-            headers: {"Content-Type" => "application/json"},
             body: json,
             debug: true,
             expects: [201],)
+  end
+
+  def update_record(bucket: "default", collection:, data:, kinto_id:)
+    body = {"data" => data}
+    json = Oj.dump(body)
+
+    request(method: :put,
+            path: "/v1/buckets/#{bucket}/collections/#{collection}/records/#{kinto_id}",
+            body: json,
+            debug: true,
+            expects: [200],)
+  end
+
+  def delete_record(bucket: "default", collection:, kinto_id:)
+    request(method: :delete,
+            path: "/v1/buckets/#{bucket}/collections/#{collection}/records/#{kinto_id}",
+            debug: true,
+            expects: [200],)
   end
 
   protected
@@ -86,11 +129,21 @@ class Kinto
   end
 
   def request(options)
+    log("->", options)
+
     resp = @connection.request(options)
     body = resp.body
     hash = unjson(body)
+    log("<-", hash)
 
     OpenStruct.new(hash)
+  rescue => e
+    log("err", e)
+    log("err", e.response.body)
+  end
+
+  def log(prefix, options)
+    STDOUT.puts [prefix, options].join(" ")
   end
 
   HealthcheckResponse = Struct.new(:permission, :storage, :cache)
@@ -101,4 +154,4 @@ url = ENV.fetch("KINTO_URL")
 token = ENV.fetch("KINTO_TOKEN")
 k = Kinto.new(url, token)
 
-binding.pry
+binding.pry if __FILE__ == $0
