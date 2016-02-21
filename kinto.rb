@@ -14,13 +14,15 @@ require "ostruct"
 
 class Kinto
 
-  def initialize(url, token)
+  def initialize(url, token, output=STDOUT)
     auth = Base64.urlsafe_encode64("token:#{token}")
     headers = {
       "Authorization": "Basic #{auth}",
       "Content-Type": "application/json",
       "Accept": "application/json",
     }
+
+    @output = output
     @connection = Excon.new(url, headers: headers)
   end
 
@@ -122,6 +124,34 @@ class Kinto
             expects: [200],)
   end
 
+  def batch(operations)
+    body = {"requests" => operations.map(&:stringify_keys)}
+    json = Oj.dump(body)
+
+    request(method: :post,
+            path: "/v1/batch",
+            body: json,
+            debug: true,
+            expects: [200],)
+  end
+
+  ## Queries
+
+  def get_record(bucket:, collection:, record_id:)
+    request(method: :get,
+            path: "/v1/buckets/#{bucket}/collections/#{collection}/records/#{record_id}",
+            debug: true,
+            expects: [200, 304, 400, 412],)
+  end
+
+  def get_collection(bucket:, collection:, query: {})
+    request(method: :get,
+            path: "/v1/buckets/#{bucket}/collections/#{collection}/records",
+            query: query,
+            debug: true,
+            expects: [200, 304, 400, 412],)
+  end
+
   protected
 
   def unjson(s)
@@ -143,7 +173,7 @@ class Kinto
   end
 
   def log(prefix, options)
-    STDOUT.puts [prefix, options].join(" ")
+    @output.puts [prefix, options].join(" ")
   end
 
   HealthcheckResponse = Struct.new(:permission, :storage, :cache)

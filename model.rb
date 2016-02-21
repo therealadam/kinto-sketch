@@ -51,6 +51,18 @@ module Kinto::Model
     kinto_params.merge(data: payload)
   end
 
+  def to_operation
+    bucket = self.kinto_params[:bucket]
+    collection = self.kinto_params[:collection]
+
+    # TODO updates/deletes
+    {
+      method: "POST",
+      path: "/buckets/#{bucket}/collections/#{collection}/records",
+      body: {"data" => serializable_hash.stringify_keys},
+    }
+  end
+
   def set_kinto_attributes(data)
     self.id = data["id"]
     self.last_modified = data["last_modified"] # XXX parse
@@ -123,6 +135,11 @@ class Kinto::Gateway
     resp = @connection.delete_record(params)
   end
 
+  def batch(models)
+    operations = models.map(&:to_operation)
+    resp = @connection.batch(operations)
+  end
+
 end
 
 class Post
@@ -159,19 +176,22 @@ k = Kinto.new(ENV['KINTO_URL'], ENV['KINTO_TOKEN'])
 kg = Kinto::Gateway.new(k)
 models = [Post, Author]
 
-## ensure the necessary bucket and collections are present
-kg.ensure_buckets(*models)
-kg.ensure_collections(*models)
+if __FILE__ == $0
+  ## ensure the necessary bucket and collections are present
+  kg.ensure_buckets(*models)
+  kg.ensure_collections(*models)
 
-author = Author.new(name: "Joe Lamer", url: "http://example.com")
-saved_author = kg.create_record(author)
+  author = Author.new(name: "Joe Lamer", url: "http://example.com")
+  saved_author = kg.create_record(author)
 
-post = Post.new(title: "First!", body: "lame", author_id: saved_author.id)
-saved_post = kg.create_record(post)
+  post = Post.new(title: "First!", body: "lame", author_id: saved_author.id)
+  saved_post = kg.create_record(post)
 
-saved_post.body = "Not so lame, now"
-updated_post = kg.update_record(saved_post)
+  saved_post.body = "Not so lame, now"
+  updated_post = kg.update_record(saved_post)
 
-result = kg.delete_record(updated_post)
+  # result = kg.delete_record(updated_post)
+  puts updated_post.id
 
-binding.pry if __FILE__ == $0
+  binding.pry
+end
